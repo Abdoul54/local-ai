@@ -265,8 +265,9 @@ export function createSpinner() {
     let interval: ReturnType<typeof setInterval> | null = null;
 
     const render = () => {
+        if (!interval) return; // guard: discard stale timer callbacks after stop()
         const frame = colorize(frames[i % frames.length]!, DIM);
-        const label = colorize('AI  › ', `${BOLD}${MAGENTA}`) + colorize(message, DIM);
+        const label = colorize('Assistant  › ', `${BOLD}${MAGENTA}`) + colorize(message, DIM);
         const hint = colorize('  ESC to cancel', DIM);
         process.stdout.write(`\r\x1b[2K${frame} ${label}${hint}`);
         i++;
@@ -279,6 +280,10 @@ export function createSpinner() {
         },
         update(msg: string) {
             message = msg;
+            render(); // only renders if interval is active (guard in render())
+        },
+        resume() {
+            if (!interval) interval = setInterval(render, 80);
             render();
         },
         stop() {
@@ -299,6 +304,14 @@ export function renderElapsed(ms: number) {
 export function debugLine(message: string) {
     return colorize(`${CONTENT_INDENT}[debug] ${message}`, DIM);
 }
+
+export function permissionPrompt(toolName: string, description: string): string {
+    const cmd = description.length > 72 ? description.slice(0, 72) + '…' : description;
+    return `  ${colorize(toolName, `${BOLD}${YELLOW}`)}  ${colorize(cmd, DIM)}\n  ${colorize('Allow?', BOLD)} ${colorize('[y/N] ', DIM)}`;
+}
+
+export function permissionGranted(): string { return colorize('y\n', GREEN); }
+export function permissionDenied(): string  { return colorize('n\n', RED);   }
 
 export function infoMessage(message: string) {
     return colorize(message, YELLOW);

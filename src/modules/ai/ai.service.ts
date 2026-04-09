@@ -4,6 +4,8 @@ import { z } from 'zod';
 import { readFileSync } from 'node:fs';
 import { createTools } from './tools.registry';
 import { assistantLabel, thinkingLabel, infoMessage, debugLine, createSpinner, createStreamingRenderer, renderElapsed } from '../chat/cli-ui';
+
+export type ConfirmFn = (toolName: string, description: string) => Promise<boolean>;
 import { config } from '../../core/config';
 
 const isWSL = (() => {
@@ -52,7 +54,7 @@ export class AIService {
         });
     }
 
-    private buildRequest(messages: ModelMessage[], thinking: boolean) {
+    private buildRequest(messages: ModelMessage[], thinking: boolean, confirm?: ConfirmFn) {
         const toolsNote = this.availableTools.length > 0
             ? '\nYou have access to a full shell with many tools available.'
             : '';
@@ -66,17 +68,21 @@ export class AIService {
                     role: 'system' as const,
                     content: config.chat.systemPrompt ??
                         `You are ${config.user.name}'s personal AI assistant with full access to the local filesystem and shell.\n` +
+                        `Current working directory: ${process.cwd()}\n\n` +
                         'You can freely navigate and read anywhere on the system:\n' +
                         '- Linux filesystem: /, /home, /etc, /var, /tmp, /opt, /usr, etc.\n' +
                         windowsDrivesLine +
-                        '- Current working directory: use "." or omit the path\n\n' +
-                        'Guidelines:\n' +
+                        '\nGuidelines:\n' +
                         '- Always use absolute paths when referring to specific locations.\n' +
                         '- To find files by name use the search tool with type "name".\n' +
                         '- To find files by content use the search tool with type "content".\n' +
                         '- For directory listings, list names only — omit "." and ".." unless asked.\n' +
                         '- Use the shell tool for operations not covered by other tools.\n' +
-                        '- Do not ask clarifying questions when you can explore and find the answer directly.' +
+                        '- Never ask the user to run a command for you. Always use the tools to get the information yourself.\n' +
+                        '- Never ask clarifying questions when you can find the answer by using a tool.\n' +
+                        '- Act immediately with sensible defaults. Do not ask for information that can be reasonably assumed (e.g. create files in the current directory, leave content empty unless specified).\n' +
+                        '- If you genuinely need missing information, ask everything in ONE single question — never ask one thing at a time across multiple turns.\n' +
+                        '- After completing a task, respond in one short sentence. Do not over-explain.' +
                         toolsNote,
                 },
                 ...messages,
@@ -111,7 +117,13 @@ export class AIService {
                 shell: tool({
                     description: 'Execute any shell command on the local system.',
                     inputSchema: z.object({ command: z.string() }),
-                    execute: async ({ command }, { abortSignal }) => this.appTools.shell.execute(command, abortSignal),
+                    execute: async ({ command }, { abortSignal }) => {
+                        if (confirm) {
+                            const allowed = await confirm('shell', command);
+                            if (!allowed) return 'Permission denied by user.';
+                        }
+                        return this.appTools.shell.execute(command, abortSignal);
+                    },
                 }),
             },
         };
@@ -178,12 +190,23 @@ export class AIService {
         return full;
     }
 
-    async generate(messages: ModelMessage[], signal?: AbortSignal): Promise<string> {
+    async generate(messages: ModelMessage[], signal?: AbortSignal, externalConfirm?: ConfirmFn): Promise<string> {
         const spinner = createSpinner();
         const startedAt = Date.now();
 
+        // Wrap external confirm so the spinner pauses while waiting for user input.
+        // The spinner auto-resumes when the AI SDK emits the next tool-result event.
+        const confirm: ConfirmFn | undefined = externalConfirm
+            ? async (toolName, description) => {
+                spinner.stop();
+                const result = await externalConfirm(toolName, description);
+                spinner.resume();
+                return result;
+            }
+            : undefined;
+
         if (config.chat.debug) {
-            const req = this.buildRequest(messages, config.chat.thinking);
+            const req = this.buildRequest(messages, config.chat.thinking, confirm);
             const promptChars = (req.messages as Array<{ content: string }>)
                 .reduce((n, m) => n + (m.content?.length ?? 0), 0);
             process.stdout.write(debugLine(
@@ -194,14 +217,14 @@ export class AIService {
         spinner.start();
 
         try {
-            const result = streamText({ ...this.buildRequest(messages, config.chat.thinking), abortSignal: signal });
+            const result = streamText({ ...this.buildRequest(messages, config.chat.thinking, confirm), abortSignal: signal });
             return await this.runStream(result, spinner, startedAt);
         } catch (err) {
             if (config.chat.thinking && isThinkingUnsupported(err)) {
                 spinner.stop();
                 process.stdout.write('\n' + infoMessage('  Model does not support thinking — retrying without it.\n\n'));
                 spinner.start();
-                const result = streamText({ ...this.buildRequest(messages, false), abortSignal: signal });
+                const result = streamText({ ...this.buildRequest(messages, false, confirm), abortSignal: signal });
                 return await this.runStream(result, spinner, startedAt);
             }
             throw err;

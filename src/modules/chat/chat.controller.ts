@@ -8,10 +8,14 @@ import {
     clearScreen,
     errorMessage,
     infoMessage,
+    permissionDenied,
+    permissionGranted,
+    permissionPrompt,
     renderConfig,
     renderHeader,
     userPrompt,
 } from './cli-ui';
+import type { ConfirmFn } from '../ai/ai.service';
 
 export class ChatController {
     private rl!: readline.Interface;
@@ -26,6 +30,17 @@ export class ChatController {
      * Close readline (so it stops listening to stdin), take over stdin in raw
      * mode, listen for ESC. Returns a cleanup function that restores readline.
      */
+    private createConfirmFn(): ConfirmFn {
+        return (toolName, description) => new Promise((resolve) => {
+            process.stdout.write(permissionPrompt(toolName, description));
+            process.stdin.once('data', (chunk: Buffer) => {
+                const yes = chunk.length > 0 && (chunk[0] === 0x79 || chunk[0] === 0x59); // y/Y
+                process.stdout.write(yes ? permissionGranted() : permissionDenied());
+                resolve(yes);
+            });
+        });
+    }
+
     private listenForEsc(abort: AbortController): () => void {
         // Close readline so it no longer has a 'data' listener on stdin.
         // It's safe here — question() has already returned its answer.
@@ -103,7 +118,7 @@ export class ChatController {
             const stopListening = this.listenForEsc(abort);
 
             try {
-                await this.service.sendMessage(userInput, abort.signal);
+                await this.service.sendMessage(userInput, abort.signal, this.createConfirmFn());
                 console.log();
             } catch (error) {
                 if ((error as Error).name === 'AbortError') {

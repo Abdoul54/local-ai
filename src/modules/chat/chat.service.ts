@@ -1,4 +1,4 @@
-import { AIService } from '../ai/ai.service';
+import { AIService, type ConfirmFn } from '../ai/ai.service';
 import type { ModelMessage } from 'ai';
 
 export class ChatService {
@@ -10,10 +10,10 @@ export class ChatService {
         this.messages = [];
     }
 
-    async sendMessage(input: string, signal?: AbortSignal) {
+    async sendMessage(input: string, signal?: AbortSignal, confirm?: ConfirmFn) {
         this.messages.push({ role: 'user', content: input });
 
-        const response = await this.ai.generate(this.messages, signal);
+        const response = await this.ai.generate(this.messages, signal, confirm);
 
         if (signal?.aborted) {
             this.messages.pop();
