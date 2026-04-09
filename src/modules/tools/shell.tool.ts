@@ -1,14 +1,34 @@
-import { $ } from 'bun';
 import { validateCommand } from './tool-security';
 
 export class ShellTool {
-    async execute(command: string) {
+    async execute(command: string, signal?: AbortSignal): Promise<string> {
         validateCommand(command);
 
+        const proc = Bun.spawn(['sh', '-c', command], {
+            stdout: 'pipe',
+            stderr: 'pipe',
+            stdin: null,
+        });
+
+        const onAbort = () => { try { proc.kill(); } catch {} };
+        signal?.addEventListener('abort', onAbort, { once: true });
+
         try {
-            return await $`${{ raw: command }}`.text();
+            const [stdout] = await Promise.all([
+                new Response(proc.stdout).text(),
+                proc.exited,
+            ]);
+            if (signal?.aborted) {
+                const err = new Error('Aborted');
+                err.name = 'AbortError';
+                throw err;
+            }
+            return stdout;
         } catch (error) {
+            if ((error as Error).name === 'AbortError') throw error;
             return `Shell Error: ${error}`;
+        } finally {
+            signal?.removeEventListener('abort', onAbort);
         }
     }
 }

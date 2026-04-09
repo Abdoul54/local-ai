@@ -42,6 +42,16 @@ export class AIService {
         this.appTools = createTools(availableTools);
     }
 
+    private static abortable<T>(promise: Promise<T>, signal: AbortSignal | undefined): Promise<T> {
+        if (!signal) return promise;
+        if (signal.aborted) return Promise.reject(Object.assign(new Error('Aborted'), { name: 'AbortError' }));
+        return new Promise((resolve, reject) => {
+            const onAbort = () => reject(Object.assign(new Error('Aborted'), { name: 'AbortError' }));
+            signal.addEventListener('abort', onAbort, { once: true });
+            promise.then(resolve, reject).finally(() => signal.removeEventListener('abort', onAbort));
+        });
+    }
+
     private buildRequest(messages: ModelMessage[], thinking: boolean) {
         const toolsNote = this.availableTools.length > 0
             ? '\nYou have access to a full shell with many tools available.'
@@ -76,12 +86,12 @@ export class AIService {
                 directory: tool({
                     description: `List files and folders at any path on the filesystem. Use absolute paths (e.g. /home/user, /etc${isWSL ? ', /mnt/c/Users' : ''}) or "." for the current directory.`,
                     inputSchema: z.object({ path: z.string().default('.') }),
-                    execute: async ({ path }) => this.appTools.directory.list(path),
+                    execute: async ({ path }, { abortSignal }) => AIService.abortable(this.appTools.directory.list(path), abortSignal),
                 }),
                 file: tool({
                     description: 'Read the contents of any file on the filesystem using its absolute path.',
                     inputSchema: z.object({ path: z.string() }),
-                    execute: async ({ path }) => this.appTools.file.read(path),
+                    execute: async ({ path }, { abortSignal }) => AIService.abortable(this.appTools.file.read(path), abortSignal),
                 }),
                 search: tool({
                     description: 'Search the filesystem. Use type "name" to find files by filename pattern (supports wildcards like *.ts), or type "content" to find files containing a text pattern.',
@@ -91,15 +101,17 @@ export class AIService {
                         type: z.enum(['name', 'content']),
                         maxResults: z.number().default(30),
                     }),
-                    execute: async ({ rootPath, pattern, type, maxResults }) => {
-                        if (type === 'name') return this.appTools.search.byName(rootPath, pattern, maxResults);
-                        return this.appTools.search.byContent(rootPath, pattern, maxResults);
+                    execute: async ({ rootPath, pattern, type, maxResults }, { abortSignal }) => {
+                        const p = type === 'name'
+                            ? this.appTools.search.byName(rootPath, pattern, maxResults)
+                            : this.appTools.search.byContent(rootPath, pattern, maxResults);
+                        return AIService.abortable(p, abortSignal);
                     },
                 }),
                 shell: tool({
                     description: 'Execute any shell command on the local system.',
                     inputSchema: z.object({ command: z.string() }),
-                    execute: async ({ command }) => this.appTools.shell.execute(command),
+                    execute: async ({ command }, { abortSignal }) => this.appTools.shell.execute(command, abortSignal),
                 }),
             },
         };

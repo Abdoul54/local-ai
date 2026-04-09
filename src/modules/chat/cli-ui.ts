@@ -1,3 +1,5 @@
+import { config } from "../../core/config";
+
 const RESET = '\x1b[0m';
 const DIM = '\x1b[2m';
 const ITALIC = '\x1b[3m';
@@ -107,11 +109,11 @@ export function renderHeader(conversationId: string, model: string, toolCount = 
 }
 
 export function userPrompt() {
-    return colorize('You › ', `${BOLD}${GREEN}`);
+    return colorize(`${config.user.name} › `, `${BOLD}${GREEN}`);
 }
 
 export function assistantLabel() {
-    return colorize('AI  › ', `${BOLD}${MAGENTA}`);
+    return colorize('Assistant  › ', `${BOLD}${MAGENTA}`);
 }
 
 export function thinkingLabel() {
