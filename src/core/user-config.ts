@@ -15,7 +15,8 @@ export type UserConfig = {
     };
     chat: {
         maxSteps: number;
-        dbPath: string;
+        thinking?: boolean;
+        debug?: boolean;
         systemPrompt?: string;
     };
 };
@@ -30,7 +31,6 @@ const defaults: UserConfig = {
     },
     chat: {
         maxSteps: 5,
-        dbPath: join(homedir(), '.local', 'share', 'local-ai', 'chat.db'),
     },
 };
 
@@ -43,7 +43,7 @@ function deepMerge<T extends Record<string, unknown>>(base: T, override: Partial
         if (typeof val === 'object' && val !== null && typeof baseVal === 'object' && baseVal !== null) {
             (result as Record<string, unknown>)[key as string] = deepMerge(baseVal as Record<string, unknown>, val as Record<string, unknown>);
         } else {
-            result[key] = val;
+            result[key] = val as T[keyof T];
         }
     }
     return result;

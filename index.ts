@@ -52,7 +52,7 @@ while (true) {
         fullResponse += chunk;
     }
 
-    process.stdout.write('\n\n');
+    process.stdout.write('\n');
 
     db.query(`
     INSERT INTO messages (conversation_id, role, content)

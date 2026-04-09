@@ -1,23 +1,24 @@
-import { ChatRepository } from './chat.repository';
 import { AIService } from '../ai/ai.service';
+import type { ModelMessage } from 'ai';
 
 export class ChatService {
-    constructor(
-        private repo: ChatRepository,
-        private ai: AIService,
-    ) { }
+    private messages: ModelMessage[] = [];
 
-    createConversation() {
-        return this.repo.createConversation();
+    constructor(private ai: AIService) {}
+
+    reset() {
+        this.messages = [];
     }
 
-    async sendMessage(conversationId: string, input: string) {
-        this.repo.saveMessage(conversationId, 'user', input);
+    async sendMessage(input: string, signal?: AbortSignal) {
+        this.messages.push({ role: 'user', content: input });
 
-        const messages = this.repo.getMessages(conversationId);
+        const response = await this.ai.generate(this.messages, signal);
 
-        const response = await this.ai.generate(messages);
-
-        this.repo.saveMessage(conversationId, 'assistant', response);
+        if (signal?.aborted) {
+            this.messages.pop();
+        } else {
+            this.messages.push({ role: 'assistant', content: response });
+        }
     }
 }

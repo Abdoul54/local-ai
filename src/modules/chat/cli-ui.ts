@@ -94,10 +94,11 @@ function formatCodeLine(line: string) {
     return colorize(`${CODE_INDENT}${line}`, BLUE);
 }
 
-export function renderHeader(conversationId: string, model: string) {
+export function renderHeader(conversationId: string, model: string, toolCount = 0) {
     const lines = [
         colorize('Local AI', `${BOLD}${CYAN}`),
         colorize(`Model: ${model}  •  Conversation: ${conversationId}`, DIM),
+        ...(toolCount > 0 ? [colorize(`Shell tools: ${toolCount} detected`, DIM)] : []),
         colorize('Commands: /help  /new  /clear  exit', DIM),
         '',
     ];
@@ -113,57 +114,108 @@ export function assistantLabel() {
     return colorize('AI  › ', `${BOLD}${MAGENTA}`);
 }
 
+export function thinkingLabel() {
+    return colorize('    … ', `${DIM}`);
+}
+
+function isSpecialLine(buf: string): boolean {
+    const t = buf.trimStart();
+    return (
+        t.startsWith('#') ||
+        t.startsWith('- ') ||
+        t.startsWith('* ') ||
+        isOrderedListItem(t) ||
+        t.startsWith('```')
+    );
+}
+
 export function createStreamingRenderer() {
     let inCodeBlock = false;
     let lineBuffer = '';
+    let atLineStart = true;
     const width = terminalWidth() - 2;
 
-    const processLine = (line: string) => {
+    const flushCompleteLine = (line: string) => {
         const trimmed = line.trimEnd();
-
-        if (trimmed.trimStart().startsWith('```')) {
-            inCodeBlock = !inCodeBlock;
-            process.stdout.write(colorize(CODE_SEPARATOR, DIM) + '\n');
-            return;
-        }
-
-        if (inCodeBlock) {
-            process.stdout.write(formatCodeLine(trimmed) + '\n');
-            return;
-        }
-
         const t = trimmed.trim();
 
+        if (t.startsWith('```')) {
+            inCodeBlock = !inCodeBlock;
+            process.stdout.write(colorize(CODE_SEPARATOR, DIM) + '\n');
+            atLineStart = true;
+            return;
+        }
+        if (inCodeBlock) {
+            process.stdout.write(formatCodeLine(trimmed) + '\n');
+            atLineStart = true;
+            return;
+        }
         if (t.length === 0) {
             process.stdout.write('\n');
+            atLineStart = true;
             return;
         }
-
         if (t.startsWith('#')) {
             process.stdout.write(colorize(`${CONTENT_INDENT}${t.replace(/^#+\s*/, '')}`, `${BOLD}${CYAN}`) + '\n');
+            atLineStart = true;
             return;
         }
-
         if (t.startsWith('- ') || t.startsWith('* ') || isOrderedListItem(t)) {
             process.stdout.write(formatListItem(t, width) + '\n');
+            atLineStart = true;
             return;
         }
-
-        process.stdout.write(formatParagraph(t, width) + '\n');
+        // Regular prose that was already streamed — just terminate the line.
+        process.stdout.write('\n');
+        atLineStart = true;
     };
 
     return {
         write(chunk: string) {
-            lineBuffer += chunk;
-            let newlineIndex: number;
-            while ((newlineIndex = lineBuffer.indexOf('\n')) !== -1) {
-                processLine(lineBuffer.slice(0, newlineIndex));
-                lineBuffer = lineBuffer.slice(newlineIndex + 1);
+            let rest = chunk;
+
+            while (rest.length > 0) {
+                const nlIdx = rest.indexOf('\n');
+
+                if (nlIdx === -1) {
+                    lineBuffer += rest;
+
+                    // Stream prose chunks immediately; buffer special/code lines.
+                    if (!inCodeBlock && !isSpecialLine(lineBuffer)) {
+                        if (atLineStart && rest.trimStart().length > 0) {
+                            process.stdout.write(CONTENT_INDENT);
+                            atLineStart = false;
+                        }
+                        process.stdout.write(rest);
+                    }
+                    break;
+                }
+
+                const segment = rest.slice(0, nlIdx);
+                rest = rest.slice(nlIdx + 1);
+                lineBuffer += segment;
+
+                const line = lineBuffer;
+                lineBuffer = '';
+
+                const isSpecial = inCodeBlock || isSpecialLine(line);
+
+                if (isSpecial) {
+                    flushCompleteLine(line);
+                } else {
+                    // Prose was streamed live — just end the line.
+                    if (line.trim().length === 0) {
+                        process.stdout.write('\n');
+                    } else {
+                        process.stdout.write('\n');
+                    }
+                    atLineStart = true;
+                }
             }
         },
         flush() {
-            if (lineBuffer.trim()) {
-                processLine(lineBuffer);
+            if (lineBuffer) {
+                flushCompleteLine(lineBuffer);
                 lineBuffer = '';
             }
         },
@@ -173,8 +225,7 @@ export function createStreamingRenderer() {
 export function renderConfig(cfg: {
     user: { name: string };
     ollama: { baseURL: string; model: string };
-    db: { path: string };
-    chat: { maxSteps: number; systemPrompt?: string };
+    chat: { maxSteps: number; thinking: boolean; debug: boolean; systemPrompt?: string };
     configPath: string;
 }) {
     const row = (label: string, value: string) =>
@@ -194,7 +245,8 @@ export function renderConfig(cfg: {
         '',
         colorize(`${CONTENT_INDENT}Chat`, `${BOLD}`),
         row('maxSteps', String(cfg.chat.maxSteps)),
-        row('dbPath', cfg.db.path),
+        row('thinking', cfg.chat.thinking ? 'on' : 'off'),
+        row('debug', cfg.chat.debug ? 'on' : 'off'),
         ...(cfg.chat.systemPrompt
             ? [row('systemPrompt', cfg.chat.systemPrompt.slice(0, 60) + (cfg.chat.systemPrompt.length > 60 ? '…' : ''))]
             : []),
@@ -206,18 +258,26 @@ export function renderConfig(cfg: {
 
 export function createSpinner() {
     const frames = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
-    const label = colorize('AI  › ', `${BOLD}${MAGENTA}`) + colorize('thinking…', DIM);
+    let message = 'thinking…';
     let i = 0;
     let interval: ReturnType<typeof setInterval> | null = null;
+
+    const render = () => {
+        const frame = colorize(frames[i % frames.length]!, DIM);
+        const label = colorize('AI  › ', `${BOLD}${MAGENTA}`) + colorize(message, DIM);
+        const hint = colorize('  ESC to cancel', DIM);
+        process.stdout.write(`\r\x1b[2K${frame} ${label}${hint}`);
+        i++;
+    };
 
     return {
         start() {
             process.stdout.write('\n');
-            interval = setInterval(() => {
-                const frame = colorize(frames[i % frames.length]!, DIM);
-                process.stdout.write(`\r${frame} ${label}`);
-                i++;
-            }, 80);
+            interval = setInterval(render, 80);
+        },
+        update(msg: string) {
+            message = msg;
+            render();
         },
         stop() {
             if (interval) {
@@ -227,6 +287,15 @@ export function createSpinner() {
             process.stdout.write('\r\x1b[2K');
         },
     };
+}
+
+export function renderElapsed(ms: number) {
+    const s = (ms / 1000).toFixed(1);
+    return colorize(`${CONTENT_INDENT}done in ${s}s`, DIM);
+}
+
+export function debugLine(message: string) {
+    return colorize(`${CONTENT_INDENT}[debug] ${message}`, DIM);
 }
 
 export function infoMessage(message: string) {
