@@ -1,4 +1,4 @@
-import { validateCommand } from './tool-security';
+import { validateCommand, HOME } from './tool-security';
 
 export class ShellTool {
     async execute(command: string, signal?: AbortSignal): Promise<string> {
@@ -8,6 +8,7 @@ export class ShellTool {
             stdout: 'pipe',
             stderr: 'pipe',
             stdin: null,
+            cwd: HOME,   // working directory is always home — prevents relative path escapes
         });
 
         const onAbort = () => { try { proc.kill(); } catch {} };

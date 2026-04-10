@@ -297,6 +297,22 @@ export function createSpinner() {
     };
 }
 
+export async function waitWithSpinner(label: string, task: Promise<unknown>): Promise<void> {
+    const frames = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+    let i = 0;
+    const interval = setInterval(() => {
+        const frame = colorize(frames[i % frames.length]!, DIM);
+        process.stdout.write(`\r\x1b[2K  ${frame}  ${colorize(label, DIM)}`);
+        i++;
+    }, 80);
+    try {
+        await task;
+    } finally {
+        clearInterval(interval);
+        process.stdout.write('\r\x1b[2K');
+    }
+}
+
 export function renderElapsed(ms: number) {
     const s = (ms / 1000).toFixed(1);
     return colorize(`${CONTENT_INDENT}done in ${s}s`, DIM);

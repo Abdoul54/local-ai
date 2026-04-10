@@ -1,6 +1,21 @@
 import { config } from './config';
 
 type TagsResponse = { models: Array<{ name: string }> };
+type PsResponse  = { models: Array<{ name: string }> };
+
+export async function isModelLoaded(): Promise<boolean> {
+    const baseURL = config.ollama.baseURL.replace(/\/+$/, '');
+    const model = config.ollama.model;
+    const baseName = model.replace(/:.*$/, '');
+    try {
+        const res = await fetch(`${baseURL}/ps`);
+        if (!res.ok) return false;
+        const data = await res.json() as PsResponse;
+        return (data.models ?? []).some(m => m.name === model || m.name.startsWith(baseName + ':'));
+    } catch {
+        return false;
+    }
+}
 
 export async function checkOllama(): Promise<void> {
     const baseURL = config.ollama.baseURL.replace(/\/+$/, '');

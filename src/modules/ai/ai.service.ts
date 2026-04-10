@@ -90,27 +90,31 @@ export class AIService {
             stopWhen: stepCountIs(config.chat.maxSteps),
             tools: {
                 directory: tool({
-                    description: `List files and folders at any path on the filesystem. Use absolute paths (e.g. /home/user, /etc${isWSL ? ', /mnt/c/Users' : ''}) or "." for the current directory.`,
-                    inputSchema: z.object({ path: z.string().default('.') }),
+                    description: 'List files and folders inside the user\'s home directory. Path must be inside home.',
+                    inputSchema: z.object({ path: z.string().default('~').describe('Directory to list. Must be inside home.') }),
                     execute: async ({ path }, { abortSignal }) => AIService.abortable(this.appTools.directory.list(path), abortSignal),
                 }),
                 file: tool({
-                    description: 'Read the contents of any file on the filesystem using its absolute path.',
+                    description: 'Read the contents of a file. Path must be inside the user\'s home directory.',
                     inputSchema: z.object({ path: z.string() }),
                     execute: async ({ path }, { abortSignal }) => AIService.abortable(this.appTools.file.read(path), abortSignal),
                 }),
                 search: tool({
-                    description: 'Search the filesystem. Use type "name" to find files by filename pattern (supports wildcards like *.ts), or type "content" to find files containing a text pattern.',
+                    description: 'Search inside the user\'s home directory. ' +
+                        'type="name" finds files/dirs by name pattern (e.g. "*.ts", "config"). ' +
+                        'type="content" finds files containing a text/regex pattern and returns matching lines with line numbers. ' +
+                        'fileType filters name searches to "file", "dir", or "any".',
                     inputSchema: z.object({
-                        rootPath: z.string().default('/').describe('Directory to search in. Use / for the whole filesystem.'),
-                        pattern: z.string().describe('Filename glob (e.g. "*.env") for name search, or text/regex for content search.'),
-                        type: z.enum(['name', 'content']),
+                        pattern:  z.string().describe('Filename pattern or text/regex to search for.'),
+                        rootPath: z.string().optional().describe('Subdirectory to search in (must be inside home). Defaults to home root.'),
+                        type:     z.enum(['name', 'content']),
+                        fileType: z.enum(['file', 'dir', 'any']).default('any').describe('For name searches only.'),
                         maxResults: z.number().default(30),
                     }),
-                    execute: async ({ rootPath, pattern, type, maxResults }, { abortSignal }) => {
+                    execute: async ({ pattern, rootPath, type, fileType, maxResults }, { abortSignal }) => {
                         const p = type === 'name'
-                            ? this.appTools.search.byName(rootPath, pattern, maxResults)
-                            : this.appTools.search.byContent(rootPath, pattern, maxResults);
+                            ? this.appTools.search.byName(pattern, rootPath, fileType, maxResults)
+                            : this.appTools.search.byContent(pattern, rootPath, maxResults);
                         return AIService.abortable(p, abortSignal);
                     },
                 }),
@@ -195,10 +199,11 @@ export class AIService {
             const result = streamText({
                 model: ollama(config.ollama.model),
                 messages: [{ role: 'user' as const, content: '.' }],
-                maxTokens: 1,
+                maxOutputTokens: 1,
             });
-            // Consume the stream minimally — just enough to trigger model load.
-            for await (const _ of result.textStream) { break; }
+            // Fully consume the stream — ensures the model is completely loaded.
+            // eslint-disable-next-line @typescript-eslint/no-unused-vars
+            for await (const _ of result.textStream) { /* drain */ }
         } catch {
             // Warmup is best-effort; ignore errors.
         }

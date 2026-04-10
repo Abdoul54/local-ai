@@ -66,3 +66,12 @@ function load(): UserConfig {
 }
 
 export const userConfig = load();
+
+export function saveConfig(patch: Partial<UserConfig>): void {
+    const current = deepMerge(defaults, existsSync(CONFIG_PATH)
+        ? JSON.parse(readFileSync(CONFIG_PATH, 'utf-8')) as Partial<UserConfig>
+        : {});
+    const next = deepMerge(current, patch);
+    mkdirSync(CONFIG_DIR, { recursive: true });
+    writeFileSync(CONFIG_PATH, JSON.stringify(next, null, 2) + '\n', 'utf-8');
+}

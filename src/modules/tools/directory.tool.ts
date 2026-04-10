@@ -1,8 +1,10 @@
 import { readdir } from 'fs/promises';
+import { assertInsideHome } from './tool-security';
 
 export class DirectoryTool {
     async list(path = '.') {
         try {
+            assertInsideHome(path);
             const entries = await readdir(path, { withFileTypes: true });
 
             return entries

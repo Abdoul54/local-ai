@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { stdin as input, stdout as output } from 'node:process';
 import { ChatService } from './chat.service';
 import { config } from '../../core/config';
-import { CONFIG_PATH } from '../../core/user-config';
+import { CONFIG_PATH, saveConfig } from '../../core/user-config';
 import {
     clearScreen,
     errorMessage,
@@ -91,7 +91,38 @@ export class ChatController {
             if (userInput.length === 0) continue;
 
             if (userInput === '/help') {
-                console.log(infoMessage('Available commands: /help, /new, /clear, /config, exit\n'));
+                console.log(infoMessage(
+                    'Available commands: /help, /new, /clear, /config, exit\n' +
+                    '  /set model <name>      — change the Ollama model\n' +
+                    '  /set name <value>      — change your display name\n' +
+                    '  /set thinking on|off   — toggle thinking mode\n' +
+                    '  /set debug on|off      — toggle debug mode\n' +
+                    '  /set maxsteps <n>      — set max tool steps\n'
+                ));
+                continue;
+            }
+
+            if (userInput.startsWith('/set ')) {
+                const parts = userInput.slice(5).trim().split(/\s+/);
+                const key = parts[0]?.toLowerCase();
+                const val = parts.slice(1).join(' ');
+
+                if (!key || !val) {
+                    console.log(infoMessage('  Usage: /set <key> <value>\n'));
+                    continue;
+                }
+
+                try {
+                    if (key === 'model')         saveConfig({ ollama: { host: config.ollama.baseURL, model: val } });
+                    else if (key === 'name')     saveConfig({ user: { name: val } });
+                    else if (key === 'thinking') saveConfig({ chat: { maxSteps: config.chat.maxSteps, thinking: val === 'on' } });
+                    else if (key === 'debug')    saveConfig({ chat: { maxSteps: config.chat.maxSteps, debug: val === 'on' } });
+                    else if (key === 'maxsteps') saveConfig({ chat: { maxSteps: parseInt(val, 10) } });
+                    else { console.log(infoMessage(`  Unknown key: ${key}\n`)); continue; }
+                    console.log(infoMessage(`  ${key} → ${val}  (restart to apply)\n`));
+                } catch {
+                    console.log(infoMessage('  Failed to save config.\n'));
+                }
                 continue;
             }
 
