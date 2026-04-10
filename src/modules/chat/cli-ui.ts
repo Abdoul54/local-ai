@@ -97,7 +97,7 @@ function formatCodeLine(line: string) {
 }
 
 export function renderHeader(conversationId: string, model: string, toolCount = 0, gpu?: { type: 'nvidia'; name: string } | { type: 'none' }) {
-    const gpuLine = gpu?.type === 'nvidia' ? colorize(`GPU: ${gpu.name}`, DIM) : null;
+    const gpuLine = gpu && gpu.type !== 'none' ? colorize(`GPU: ${gpu.name}`, DIM) : null;
     const lines = [
         colorize('Local AI', `${BOLD}${CYAN}`),
         colorize(`${model}  ·  ${conversationId}`, DIM),

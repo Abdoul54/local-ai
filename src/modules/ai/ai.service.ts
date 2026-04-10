@@ -1,20 +1,12 @@
 import { createOllama } from 'ollama-ai-provider-v2';
 import { stepCountIs, streamText, tool, type ModelMessage } from 'ai';
 import { z } from 'zod';
-import { readFileSync } from 'node:fs';
 import { createTools } from './tools.registry';
 import { assistantLabel, thinkingLabel, infoMessage, debugLine, createSpinner, createStreamingRenderer, renderElapsed } from '../chat/cli-ui';
 
 export type ConfirmFn = (toolName: string, description: string) => Promise<boolean>;
 import { config } from '../../core/config';
-
-const isWSL = (() => {
-    try {
-        return /microsoft|wsl/i.test(readFileSync('/proc/version', 'utf-8'));
-    } catch {
-        return false;
-    }
-})();
+import { isWSL, isWindows } from '../../core/platform';
 
 const ollama = createOllama({
     baseURL: config.ollama.baseURL,
@@ -58,7 +50,9 @@ export class AIService {
         const toolsNote = this.availableTools.length > 0
             ? '\nYou have access to a full shell with many tools available.'
             : '';
-        const windowsDrivesLine = isWSL ? '- Windows drives: /mnt/c, /mnt/d, etc.\n' : '';
+        const windowsDrivesLine = isWSL ? '- Windows drives accessible at /mnt/c, /mnt/d, etc.\n'
+                                : isWindows ? '- Windows paths use backslashes, e.g. C:\\Users\\name\n'
+                                : '';
 
         return {
             model: ollama(config.ollama.model),

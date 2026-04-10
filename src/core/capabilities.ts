@@ -1,10 +1,11 @@
 import { readdir } from 'fs/promises';
 import { access, constants } from 'fs/promises';
+import { isWindows } from './platform';
 
 /** Scan every directory in $PATH and return all executable names found. */
 export async function detectCapabilities(): Promise<string[]> {
     const pathDirs = (process.env.PATH ?? '')
-        .split(':')
+        .split(isWindows ? ';' : ':')
         .filter(Boolean)
         // Skip Windows drives mounted under /mnt — they contain thousands of
         // .exe/.dll files that aren't useful Linux shell tools.

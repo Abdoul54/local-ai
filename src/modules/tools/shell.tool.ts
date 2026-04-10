@@ -1,10 +1,15 @@
 import { validateCommand, HOME } from './tool-security';
+import { isWindows } from '../../core/platform';
 
 export class ShellTool {
     async execute(command: string, signal?: AbortSignal): Promise<string> {
         validateCommand(command);
 
-        const proc = Bun.spawn(['sh', '-c', command], {
+        const argv = isWindows
+            ? ['powershell.exe', '-NoProfile', '-NonInteractive', '-Command', command]
+            : ['sh', '-c', command];
+
+        const proc = Bun.spawn(argv, {
             stdout: 'pipe',
             stderr: 'pipe',
             stdin: null,
