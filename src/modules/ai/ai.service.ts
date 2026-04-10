@@ -190,6 +190,20 @@ export class AIService {
         return full;
     }
 
+    async warmup(): Promise<void> {
+        try {
+            const result = streamText({
+                model: ollama(config.ollama.model),
+                messages: [{ role: 'user' as const, content: '.' }],
+                maxTokens: 1,
+            });
+            // Consume the stream minimally — just enough to trigger model load.
+            for await (const _ of result.textStream) { break; }
+        } catch {
+            // Warmup is best-effort; ignore errors.
+        }
+    }
+
     async generate(messages: ModelMessage[], signal?: AbortSignal, externalConfirm?: ConfirmFn): Promise<string> {
         const spinner = createSpinner();
         const startedAt = Date.now();

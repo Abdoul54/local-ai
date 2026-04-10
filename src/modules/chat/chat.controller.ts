@@ -16,11 +16,12 @@ import {
     userPrompt,
 } from './cli-ui';
 import type { ConfirmFn } from '../ai/ai.service';
+import { type GPUInfo } from '../../core/gpu';
 
 export class ChatController {
     private rl!: readline.Interface;
 
-    constructor(private service: ChatService, private readonly toolCount: number = 0) {}
+    constructor(private service: ChatService, private readonly toolCount: number = 0, private readonly gpu: GPUInfo = { type: 'none' }) {}
 
     private createRl() {
         return readline.createInterface({ input, output });
@@ -81,7 +82,7 @@ export class ChatController {
         let sessionId = randomUUID();
 
         clearScreen();
-        console.log(renderHeader(sessionId, config.ollama.model, this.toolCount));
+        console.log(renderHeader(sessionId, config.ollama.model, this.toolCount, this.gpu));
 
         while (true) {
             const userInput = (await this.rl.question(userPrompt())).trim();
@@ -101,7 +102,7 @@ export class ChatController {
 
             if (userInput === '/clear') {
                 clearScreen();
-                console.log(renderHeader(sessionId, config.ollama.model, this.toolCount));
+                console.log(renderHeader(sessionId, config.ollama.model, this.toolCount, this.gpu));
                 continue;
             }
 
@@ -109,7 +110,7 @@ export class ChatController {
                 this.service.reset();
                 sessionId = randomUUID();
                 clearScreen();
-                console.log(renderHeader(sessionId, config.ollama.model, this.toolCount));
+                console.log(renderHeader(sessionId, config.ollama.model, this.toolCount, this.gpu));
                 console.log(infoMessage('Started a fresh conversation.\n'));
                 continue;
             }

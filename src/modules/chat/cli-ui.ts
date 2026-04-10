@@ -96,12 +96,14 @@ function formatCodeLine(line: string) {
     return colorize(`${CODE_INDENT}${line}`, BLUE);
 }
 
-export function renderHeader(conversationId: string, model: string, toolCount = 0) {
+export function renderHeader(conversationId: string, model: string, toolCount = 0, gpu?: { type: 'nvidia'; name: string } | { type: 'none' }) {
+    const gpuLine = gpu?.type === 'nvidia' ? colorize(`GPU: ${gpu.name}`, DIM) : null;
     const lines = [
         colorize('Local AI', `${BOLD}${CYAN}`),
-        colorize(`Model: ${model}  •  Conversation: ${conversationId}`, DIM),
-        ...(toolCount > 0 ? [colorize(`Shell tools: ${toolCount} detected`, DIM)] : []),
-        colorize('Commands: /help  /new  /clear  exit', DIM),
+        colorize(`${model}  ·  ${conversationId}`, DIM),
+        ...(toolCount > 0 ? [colorize(`${toolCount} tools`, DIM)] : []),
+        ...(gpuLine ? [gpuLine] : []),
+        colorize('/help  /new  /clear  exit  ·  ESC to cancel', DIM),
         '',
     ];
 
@@ -113,11 +115,11 @@ export function userPrompt() {
 }
 
 export function assistantLabel() {
-    return colorize('Assistant  › ', `${BOLD}${MAGENTA}`);
+    return colorize('  ●  ', MAGENTA) + colorize('Assistant', `${BOLD}${MAGENTA}`);
 }
 
 export function thinkingLabel() {
-    return colorize('    … ', `${DIM}`);
+    return colorize('  ·  ', DIM);
 }
 
 function isSpecialLine(buf: string): boolean {
@@ -266,10 +268,9 @@ export function createSpinner() {
 
     const render = () => {
         if (!interval) return; // guard: discard stale timer callbacks after stop()
-        const frame = colorize(frames[i % frames.length]!, DIM);
-        const label = colorize('Assistant  › ', `${BOLD}${MAGENTA}`) + colorize(message, DIM);
-        const hint = colorize('  ESC to cancel', DIM);
-        process.stdout.write(`\r\x1b[2K${frame} ${label}${hint}`);
+        const frame = colorize(frames[i % frames.length]!, MAGENTA);
+        const status = colorize(message, DIM);
+        process.stdout.write(`\r\x1b[2K  ${frame}  ${status}`);
         i++;
     };
 
